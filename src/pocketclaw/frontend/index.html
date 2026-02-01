@@ -61,6 +61,15 @@
           <i data-lucide="camera" class="w-5 h-5"></i>
           <span>Screenshot</span>
         </button>
+        <button class="nav-item flex items-center gap-3" @click="openReminders()">
+          <i data-lucide="bell" class="w-5 h-5"></i>
+          <span>Reminders</span>
+          <span
+            x-show="reminders.length > 0"
+            class="ml-auto bg-accent/20 text-accent text-xs px-2 py-0.5 rounded-full"
+            x-text="reminders.length"
+          ></span>
+        </button>
         <button class="nav-item danger flex items-center gap-3" @click="runTool('panic')">
           <i data-lucide="octagon-x" class="w-5 h-5"></i>
           <span>Panic</span>
@@ -364,6 +373,88 @@
                   <div class="p-8 text-center text-white/40 flex flex-col items-center gap-2">
                     <i data-lucide="folder-open" class="w-8 h-8"></i>
                     <span>Empty directory</span>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reminders Modal -->
+    <div
+      class="modal-overlay"
+      x-show="showReminders"
+      x-transition.opacity
+      @click.self="showReminders = false"
+    >
+      <div class="modal modal-lg" @click.stop>
+        <div class="modal-header">
+          <h2>Reminders</h2>
+          <button class="close-btn" @click="showReminders = false"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="flex flex-col gap-4">
+            <!-- Add Reminder Input -->
+            <form class="flex gap-2" @submit.prevent="addReminder()">
+              <input
+                type="text"
+                class="reminder-input flex-1"
+                x-model="reminderInput"
+                placeholder="Remind me in 30 minutes to..."
+                :disabled="reminderLoading"
+              />
+              <button
+                type="submit"
+                class="btn-sm"
+                :disabled="!reminderInput.trim() || reminderLoading"
+              >
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
+            </form>
+
+            <p class="text-xs text-white/40">
+              Try: "in 5 minutes", "at 3pm", "tomorrow at 9am"
+            </p>
+
+            <!-- Loading State -->
+            <template x-if="reminderLoading && reminders.length === 0">
+              <div class="p-8 text-center text-white/60 flex flex-col items-center gap-2">
+                <i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i>
+                <span>Loading...</span>
+              </div>
+            </template>
+
+            <!-- Reminders List -->
+            <template x-if="!reminderLoading || reminders.length > 0">
+              <div class="reminder-list">
+                <template x-for="reminder in reminders" :key="reminder.id">
+                  <div class="reminder-item flex items-start gap-3">
+                    <i data-lucide="bell" class="w-5 h-5 text-accent mt-0.5 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium truncate" x-text="reminder.text"></p>
+                      <p class="text-xs text-white/50">
+                        <span x-text="formatReminderTime(reminder)"></span>
+                        <span class="text-accent ml-2" x-text="reminder.time_remaining"></span>
+                      </p>
+                    </div>
+                    <button
+                      class="icon-btn-sm flex-shrink-0"
+                      @click="deleteReminder(reminder.id)"
+                      title="Delete reminder"
+                    >
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </template>
+
+                <!-- Empty State -->
+                <template x-if="reminders.length === 0">
+                  <div class="p-8 text-center text-white/40 flex flex-col items-center gap-2">
+                    <i data-lucide="bell-off" class="w-8 h-8"></i>
+                    <span>No reminders set</span>
+                    <span class="text-xs">Add one above to get started</span>
                   </div>
                 </template>
               </div>

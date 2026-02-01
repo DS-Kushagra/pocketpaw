@@ -17,8 +17,12 @@ import uvicorn
 from pocketclaw.config import Settings
 from pocketclaw.llm.router import LLMRouter
 from pocketclaw.agents.router import AgentRouter
+from pocketclaw.scheduler import get_scheduler
 
 logger = logging.getLogger(__name__)
+
+# Active WebSocket connections for reminder notifications
+active_connections: list[WebSocket] = []
 
 # Get frontend directory
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -41,6 +45,37 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 
+async def broadcast_reminder(reminder: dict):
+    """Broadcast a reminder notification to all connected clients."""
+    message = {
+        "type": "reminder",
+        "reminder": reminder
+    }
+    for ws in active_connections[:]:  # Copy list to avoid modification during iteration
+        try:
+            await ws.send_json(message)
+        except Exception:
+            # Connection might be closed
+            if ws in active_connections:
+                active_connections.remove(ws)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the scheduler on app startup."""
+    scheduler = get_scheduler()
+    scheduler.start(callback=broadcast_reminder)
+    logger.info("Reminder scheduler started")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the scheduler on app shutdown."""
+    scheduler = get_scheduler()
+    scheduler.stop()
+    logger.info("Reminder scheduler stopped")
+
+
 @app.get("/")
 async def index():
     """Serve the main dashboard page."""
@@ -51,13 +86,16 @@ async def index():
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time communication."""
     await websocket.accept()
-    
+
+    # Track connection for reminder broadcasts
+    active_connections.append(websocket)
+
     # Send welcome notification (not chat message)
     await websocket.send_json({
         "type": "notification",
         "content": "👋 Connected to PocketPaw!"
     })
-    
+
     # Load settings
     settings = Settings()
     
@@ -170,11 +208,58 @@ async def websocket_endpoint(websocket: WebSocket):
             elif action == "browse":
                 path = data.get("path", "~")
                 await handle_file_browse(websocket, path, settings)
-    
+
+            # Handle reminder actions
+            elif action == "get_reminders":
+                scheduler = get_scheduler()
+                reminders = scheduler.get_reminders()
+                # Add time remaining to each reminder
+                for r in reminders:
+                    r["time_remaining"] = scheduler.format_time_remaining(r)
+                await websocket.send_json({
+                    "type": "reminders",
+                    "reminders": reminders
+                })
+
+            elif action == "add_reminder":
+                message = data.get("message", "")
+                scheduler = get_scheduler()
+                reminder = scheduler.add_reminder(message)
+
+                if reminder:
+                    reminder["time_remaining"] = scheduler.format_time_remaining(reminder)
+                    await websocket.send_json({
+                        "type": "reminder_added",
+                        "reminder": reminder
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Could not parse time from message. Try 'in 5 minutes' or 'at 3pm'"
+                    })
+
+            elif action == "delete_reminder":
+                reminder_id = data.get("id", "")
+                scheduler = get_scheduler()
+                if scheduler.delete_reminder(reminder_id):
+                    await websocket.send_json({
+                        "type": "reminder_deleted",
+                        "id": reminder_id
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "error",
+                        "content": "Reminder not found"
+                    })
+
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+    finally:
+        # Remove connection from tracking
+        if websocket in active_connections:
+            active_connections.remove(websocket)
 
 
 async def handle_tool(websocket: WebSocket, tool: str, settings: Settings, data: dict):
