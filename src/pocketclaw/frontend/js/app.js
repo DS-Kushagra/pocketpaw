@@ -1419,7 +1419,10 @@ function app() {
                 // Just refresh activity feed
                 try {
                     const activityRes = await fetch('/api/mission-control/activity');
-                    if (activityRes.ok) this.missionControl.activities = await activityRes.json();
+                    if (activityRes.ok) {
+                        const data = await activityRes.json();
+                        this.missionControl.activities = data.activities || [];
+                    }
                 } catch (e) { /* ignore */ }
                 this.$nextTick(() => { if (window.refreshIcons) window.refreshIcons(); });
                 return;
@@ -1434,10 +1437,29 @@ function app() {
                     fetch('/api/mission-control/stats')
                 ]);
 
-                if (agentsRes.ok) this.missionControl.agents = await agentsRes.json();
-                if (tasksRes.ok) this.missionControl.tasks = await tasksRes.json();
-                if (activityRes.ok) this.missionControl.activities = await activityRes.json();
-                if (statsRes.ok) this.missionControl.stats = await statsRes.json();
+                // Unwrap API responses (backend returns {agents: [...], count: N} format)
+                if (agentsRes.ok) {
+                    const data = await agentsRes.json();
+                    this.missionControl.agents = data.agents || [];
+                }
+                if (tasksRes.ok) {
+                    const data = await tasksRes.json();
+                    this.missionControl.tasks = data.tasks || [];
+                }
+                if (activityRes.ok) {
+                    const data = await activityRes.json();
+                    this.missionControl.activities = data.activities || [];
+                }
+                if (statsRes.ok) {
+                    const data = await statsRes.json();
+                    const raw = data.stats || data;
+                    // Map backend stats to frontend format
+                    this.missionControl.stats = {
+                        total_agents: raw.agents?.total || 0,
+                        active_tasks: (raw.tasks?.by_status?.in_progress || 0) + (raw.tasks?.by_status?.assigned || 0),
+                        completed_today: raw.tasks?.by_status?.done || 0,
+                        total_documents: raw.documents?.total || 0
+                    };
             } catch (e) {
                 console.error('Failed to load Mission Control data:', e);
                 this.showToast('Failed to load Mission Control', 'error');
@@ -1479,7 +1501,8 @@ function app() {
                 });
 
                 if (res.ok) {
-                    const agent = await res.json();
+                    const data = await res.json();
+                    const agent = data.agent || data;  // Unwrap if wrapped
                     this.missionControl.agents.push(agent);
                     this.missionControl.stats.total_agents++;
                     this.missionControl.showCreateAgent = false;
@@ -1550,7 +1573,8 @@ function app() {
                 });
 
                 if (res.ok) {
-                    const task = await res.json();
+                    const data = await res.json();
+                    const task = data.task || data;  // Unwrap if wrapped
                     this.missionControl.tasks.unshift(task);
                     this.missionControl.stats.active_tasks++;
                     this.missionControl.showCreateTask = false;
@@ -1559,7 +1583,8 @@ function app() {
                     // Reload activity feed
                     const activityRes = await fetch('/api/mission-control/activity');
                     if (activityRes.ok) {
-                        this.missionControl.activities = await activityRes.json();
+                        const actData = await activityRes.json();
+                        this.missionControl.activities = actData.activities || [];
                     }
                     this.$nextTick(() => {
                         if (window.refreshIcons) window.refreshIcons();
@@ -1622,7 +1647,10 @@ function app() {
                     this.showToast(`Status updated to ${status}`, 'success');
                     // Reload activity
                     const activityRes = await fetch('/api/mission-control/activity');
-                    if (activityRes.ok) this.missionControl.activities = await activityRes.json();
+                    if (activityRes.ok) {
+                        const data = await activityRes.json();
+                        this.missionControl.activities = data.activities || [];
+                    }
                 }
             } catch (e) {
                 console.error('Failed to update task status:', e);
