@@ -2391,7 +2391,20 @@ def run_dashboard(host: str = "127.0.0.1", port: int = 8888, open_browser: bool 
     print("\n" + "=" * 50)
     print("🐾 POCKETPAW WEB DASHBOARD")
     print("=" * 50)
-    print(f"\n🌐 Open http://localhost:{port} in your browser\n")
+    if host == "0.0.0.0":
+        import socket
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            local_ip = "<your-server-ip>"
+        print(f"\n🌐 Open http://{local_ip}:{port} in your browser")
+        print(f"   (listening on all interfaces — {host}:{port})\n")
+    else:
+        print(f"\n🌐 Open http://localhost:{port} in your browser\n")
 
     if open_browser:
         _open_browser_url = f"http://localhost:{port}"
