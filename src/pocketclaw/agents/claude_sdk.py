@@ -496,18 +496,7 @@ class ClaudeAgentSDK:
             )
             return
 
-        # Quick pre-flight: check if API key is available
         import os
-
-        if not os.environ.get("ANTHROPIC_API_KEY") and not self.settings.anthropic_api_key:
-            yield AgentEvent(
-                type="error",
-                content=(
-                    "❌ No Anthropic API key found.\n\n"
-                    "Open **Settings → API Keys** in the sidebar to add your key."
-                ),
-            )
-            return
 
         self._stop_flag = False
 
