@@ -38,16 +38,76 @@ UV_OVERRIDES = [
     "tiktoken>=0.7.0",
 ]
 
-# uv standalone download URLs
-UV_VERSION = "0.6.6"
-UV_DOWNLOAD_URLS = {
-    ("Windows", "AMD64"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-x86_64-pc-windows-msvc.zip",
-    ("Windows", "x86"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-i686-pc-windows-msvc.zip",
-    ("Darwin", "arm64"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-aarch64-apple-darwin.tar.gz",
-    ("Darwin", "x86_64"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-x86_64-apple-darwin.tar.gz",
-    ("Linux", "x86_64"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz",
-    ("Linux", "aarch64"): f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/uv-aarch64-unknown-linux-gnu.tar.gz",
+# uv standalone download URLs — version template; resolved at download time
+UV_PINNED_VERSION = "0.6.6"
+_UV_URL_TEMPLATE = "https://github.com/astral-sh/uv/releases/download/{version}/uv-{target}"
+UV_TARGETS = {
+    ("Windows", "AMD64"): "x86_64-pc-windows-msvc.zip",
+    ("Windows", "x86"): "i686-pc-windows-msvc.zip",
+    ("Windows", "ARM64"): "aarch64-pc-windows-msvc.zip",
+    ("Darwin", "arm64"): "aarch64-apple-darwin.tar.gz",
+    ("Darwin", "x86_64"): "x86_64-apple-darwin.tar.gz",
+    ("Linux", "x86_64"): "x86_64-unknown-linux-gnu.tar.gz",
+    ("Linux", "aarch64"): "aarch64-unknown-linux-gnu.tar.gz",
 }
+
+# Cache for resolved latest uv version (24h TTL)
+_uv_version_cache: dict[str, tuple[str, float]] = {}
+
+
+def _resolve_uv_version() -> str:
+    """Get the latest uv version from GitHub API, with 24h cache.
+
+    Falls back to UV_PINNED_VERSION on network failure.
+    """
+    import json
+    import time
+
+    cache_key = "latest"
+    if cache_key in _uv_version_cache:
+        version, ts = _uv_version_cache[cache_key]
+        if time.time() - ts < 86400:  # 24 hours
+            return version
+
+    try:
+        url = "https://api.github.com/repos/astral-sh/uv/releases/latest"
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github.v3+json"})
+        resp = urllib.request.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        tag = data.get("tag_name", "")
+        if tag:
+            version = tag.lstrip("v")
+            _uv_version_cache[cache_key] = (version, time.time())
+            logger.info("Latest uv version: %s", version)
+            return version
+    except Exception as exc:
+        logger.debug("Could not fetch latest uv version: %s", exc)
+
+    return UV_PINNED_VERSION
+
+
+def _get_uv_download_url(version: str) -> str | None:
+    """Build the uv download URL for the current platform."""
+    system = platform.system()
+    machine = platform.machine()
+
+    # Normalise machine name
+    if machine in ("x86_64", "AMD64"):
+        machine_key = "AMD64" if system == "Windows" else "x86_64"
+    elif machine in ("arm64", "aarch64", "ARM64"):
+        if system == "Windows":
+            machine_key = "ARM64"
+        elif system == "Darwin":
+            machine_key = "arm64"
+        else:
+            machine_key = "aarch64"
+    else:
+        machine_key = machine
+
+    target = UV_TARGETS.get((system, machine_key))
+    if not target:
+        return None
+    return _UV_URL_TEMPLATE.format(version=version, target=target)
 
 
 @dataclass
@@ -225,7 +285,7 @@ class Bootstrap:
                 [
                     python,
                     "-c",
-                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')",
+                    "import sys; v=sys.version_info; print(f'{v.major}.{v.minor}.{v.micro}')",
                 ],
                 capture_output=True,
                 text=True,
@@ -247,7 +307,13 @@ class Bootstrap:
 
     def _download_embedded_python(self) -> str | None:
         """Download Python embeddable package for Windows."""
-        arch = "amd64" if platform.machine().endswith("64") else "win32"
+        machine = platform.machine()
+        if machine in ("ARM64", "aarch64"):
+            arch = "arm64"
+        elif machine in ("AMD64", "x86_64"):
+            arch = "amd64"
+        else:
+            arch = "win32"
         url = PYTHON_EMBED_URL.format(version=PYTHON_EMBED_VERSION, arch=arch)
 
         logger.info("Downloading Python %s from %s", PYTHON_EMBED_VERSION, url)
@@ -327,23 +393,13 @@ class Bootstrap:
 
     def _download_uv(self) -> str | None:
         """Download the uv standalone binary."""
-        system = platform.system()
-        machine = platform.machine()
-
-        # Normalise machine name
-        if machine in ("x86_64", "AMD64"):
-            machine_key = "AMD64" if system == "Windows" else "x86_64"
-        elif machine in ("arm64", "aarch64"):
-            machine_key = "arm64" if system == "Darwin" else "aarch64"
-        else:
-            machine_key = machine
-
-        url = UV_DOWNLOAD_URLS.get((system, machine_key))
+        version = _resolve_uv_version()
+        url = _get_uv_download_url(version)
         if not url:
-            logger.warning("No uv download URL for %s/%s", system, machine)
+            logger.warning("No uv download URL for %s/%s", platform.system(), platform.machine())
             return None
 
-        logger.info("Downloading uv from %s", url)
+        logger.info("Downloading uv %s from %s", version, url)
         try:
             UV_DIR.mkdir(parents=True, exist_ok=True)
             response = urllib.request.urlopen(url, timeout=60)
@@ -362,6 +418,7 @@ class Bootstrap:
             else:
                 # .tar.gz
                 import tarfile
+
                 with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
                     for member in tf.getmembers():
                         basename = Path(member.name).name
@@ -422,7 +479,10 @@ class Bootstrap:
     # ── Package Installation ───────────────────────────────────────────
 
     def _install_pocketpaw(
-        self, venv_python: str, extras: list[str], uv: str | None = None,
+        self,
+        venv_python: str,
+        extras: list[str],
+        uv: str | None = None,
     ) -> str | None:
         """Install pocketpaw into the venv with given extras.
 
@@ -457,8 +517,16 @@ class Bootstrap:
         overrides_file = POCKETCLAW_HOME / "uv-overrides.txt"
         overrides_file.write_text("\n".join(UV_OVERRIDES) + "\n", encoding="utf-8")
 
-        cmd = [uv, "pip", "install", pkg, "--python", venv_python,
-               "--override", str(overrides_file)]
+        cmd = [
+            uv,
+            "pip",
+            "install",
+            pkg,
+            "--python",
+            venv_python,
+            "--override",
+            str(overrides_file),
+        ]
         logger.info("Running: %s", " ".join(cmd))
 
         result = subprocess.run(
@@ -530,7 +598,9 @@ class Bootstrap:
         )
 
     def _get_installed_version(
-        self, venv_python: str, uv: str | None = None,
+        self,
+        venv_python: str,
+        uv: str | None = None,
     ) -> str | None:
         """Get the installed pocketpaw version from the venv."""
         try:

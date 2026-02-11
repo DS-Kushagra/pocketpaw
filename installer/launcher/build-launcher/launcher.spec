@@ -4,12 +4,16 @@
 #
 # Usage:
 #   pip install pyinstaller pystray Pillow
-#   pyinstaller installer/launcher/build/launcher.spec
+#   python installer/launcher/build-launcher/build.py --version 0.3.0
 #
 # Output: dist/PocketPaw/ (folder mode for fast startup)
 
+import os
 import platform
 from pathlib import Path
+
+# Version from environment (set by build.py)
+VERSION = os.environ.get("POCKETPAW_VERSION", "0.1.0")
 
 # Paths
 # SPECPATH is provided by PyInstaller and points to the directory containing this spec file
@@ -53,6 +57,8 @@ a = Analysis(
         "launcher.tray",
         "launcher.splash",
         "launcher.updater",
+        "launcher.autostart",
+        "launcher.uninstall",
     ],
     excludes=[
         # Don't bundle heavy stuff — pocketpaw goes in the venv, not here
@@ -104,10 +110,10 @@ if platform.system() == "Darwin":
         info_plist={
             "CFBundleName": "PocketPaw",
             "CFBundleDisplayName": "PocketPaw",
-            "CFBundleVersion": "0.1.0",
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleVersion": VERSION,
+            "CFBundleShortVersionString": VERSION,
             "LSBackgroundOnly": False,
-            "LSUIElement": True,  # Hide from Dock, show in menu bar
+            "LSMinimumSystemVersion": "12.0",
             "NSHighResolutionCapable": True,
         },
     )

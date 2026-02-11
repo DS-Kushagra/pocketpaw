@@ -9,12 +9,16 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
-import os
 import sys
 import threading
 import time
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .bootstrap import Bootstrap
+    from .server import ServerManager
 
 # ---------------------------------------------------------------------------
 # PyInstaller frozen-exe fixup: when PyInstaller runs __main__.py as a script,
@@ -39,6 +43,7 @@ if __package__ is None or __package__ == "":
     except ImportError:
         # If there's no __init__.py reachable, create a virtual package
         import types
+
         pkg = types.ModuleType("launcher")
         pkg.__path__ = [str(_this_dir)]
         pkg.__package__ = "launcher"
@@ -89,9 +94,46 @@ def main() -> int:
         action="store_true",
         help="Force reinstall (delete venv and start fresh)",
     )
+    parser.add_argument(
+        "--autostart",
+        action="store_true",
+        default=None,
+        help="Enable start-on-login and exit",
+    )
+    parser.add_argument(
+        "--no-autostart",
+        action="store_true",
+        default=None,
+        help="Disable start-on-login and exit",
+    )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="Run interactive uninstaller and exit",
+    )
     args = parser.parse_args()
 
     logger.info("PocketPaw Desktop Launcher starting")
+
+    # Handle --autostart / --no-autostart (exit immediately after)
+    if args.autostart or args.no_autostart:
+        from .autostart import AutoStartManager
+
+        mgr = AutoStartManager()
+        if args.autostart:
+            ok = mgr.enable()
+            print("Auto-start enabled." if ok else "Failed to enable auto-start.")
+        else:
+            ok = mgr.disable()
+            print("Auto-start disabled." if ok else "Failed to disable auto-start.")
+        return 0 if ok else 1
+
+    # Handle --uninstall (exit immediately after)
+    if args.uninstall:
+        from .uninstall import Uninstaller
+
+        Uninstaller().interactive_uninstall()
+        return 0
 
     # Import our modules
     from .bootstrap import VENV_DIR, Bootstrap

@@ -82,8 +82,7 @@ class Updater:
                 logger.info("Running uv pip install --upgrade %s", PACKAGE_NAME)
                 # Use overrides file if it exists (created by bootstrap)
                 overrides = POCKETCLAW_HOME / "uv-overrides.txt"
-                cmd = [uv, "pip", "install", "--upgrade", PACKAGE_NAME,
-                       "--python", str(python)]
+                cmd = [uv, "pip", "install", "--upgrade", PACKAGE_NAME, "--python", str(python)]
                 if overrides.exists():
                     cmd.extend(["--override", str(overrides)])
                 result = subprocess.run(
@@ -95,8 +94,7 @@ class Updater:
             else:
                 logger.info("Running pip install --upgrade %s", PACKAGE_NAME)
                 result = subprocess.run(
-                    [str(python), "-m", "pip", "install", "--upgrade",
-                     PACKAGE_NAME, "--quiet"],
+                    [str(python), "-m", "pip", "install", "--upgrade", PACKAGE_NAME, "--quiet"],
                     capture_output=True,
                     text=True,
                     timeout=300,

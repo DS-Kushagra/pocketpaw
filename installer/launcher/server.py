@@ -207,7 +207,9 @@ class ServerManager:
                 except Exception:
                     pass
                 logger.error(
-                    "Server process exited with code %d\n%s", rc, stderr_out,
+                    "Server process exited with code %d\n%s",
+                    rc,
+                    stderr_out,
                 )
                 return False
             if self.is_healthy():
