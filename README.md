@@ -25,7 +25,7 @@
 ## Quick Start
 
 ```bash
-curl -fsSL https://pocketpaw.dev/install.sh | sh
+curl -fsSL https://pocketpaw.xyz/install.sh | sh
 ```
 
 Or install directly:
