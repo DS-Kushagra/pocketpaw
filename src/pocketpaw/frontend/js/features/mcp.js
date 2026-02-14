@@ -312,6 +312,7 @@ window.PocketPaw.MCP = {
                 server.name = typeof server.name === 'string' ? server.name : '';
                 server.title = typeof server.title === 'string' ? server.title : '';
                 server.description = typeof server.description === 'string' ? server.description : '';
+                server.version = typeof server.version === 'string' ? server.version : '';
                 server.packages = Array.isArray(server.packages) ? server.packages : [];
                 server.remotes = Array.isArray(server.remotes) ? server.remotes : [];
                 server.environmentVariables = Array.isArray(server.environmentVariables)
