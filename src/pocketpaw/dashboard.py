@@ -3352,13 +3352,20 @@ async def get_memory_stats():
     }
 
 
-def run_dashboard(host: str = "127.0.0.1", port: int = 8888, open_browser: bool = True):
+def run_dashboard(
+    host: str = "127.0.0.1",
+    port: int = 8888,
+    open_browser: bool = True,
+    dev: bool = False,
+):
     """Run the dashboard server."""
     global _open_browser_url
 
     print("\n" + "=" * 50)
     print("🐾 POCKETPAW WEB DASHBOARD")
     print("=" * 50)
+    if dev:
+        print("🔄 Development mode — auto-reload enabled")
     if host == "0.0.0.0":
         import socket
 
@@ -3377,7 +3384,21 @@ def run_dashboard(host: str = "127.0.0.1", port: int = 8888, open_browser: bool 
     if open_browser:
         _open_browser_url = f"http://localhost:{port}"
 
-    uvicorn.run(app, host=host, port=port)
+    if dev:
+        import pathlib
+
+        src_dir = str(pathlib.Path(__file__).resolve().parent)
+        uvicorn.run(
+            "pocketpaw.dashboard:app",
+            host=host,
+            port=port,
+            reload=True,
+            reload_dirs=[src_dir],
+            reload_includes=["*.py", "*.html", "*.js", "*.css"],
+            log_level="debug",
+        )
+    else:
+        uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
