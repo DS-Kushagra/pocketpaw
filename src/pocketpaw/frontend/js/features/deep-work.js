@@ -9,6 +9,7 @@
  * - Project status helpers (color, label, icon)
  * - Planning phase info
  * - Active project count
+ * - Output Files panel (loadProjectOutputFiles, handleOutputFiles, openOutputFile)
  */
 
 window.PocketPaw = window.PocketPaw || {};
@@ -33,6 +34,10 @@ window.PocketPaw.DeepWork = {
                 planningPhase: '',             // Current phase: research, prd, tasks, team
                 planningMessage: '',           // Phase progress message
                 planningProjectId: null,       // Project being planned
+                // Output Files panel state
+                projectOutputFiles: [],        // files in project output directory
+                projectOutputLoading: false,   // loading state for output files
+                _outputExpanded: true,         // output panel starts expanded
             }
         };
     },
@@ -132,6 +137,8 @@ window.PocketPaw.DeepWork = {
                 this.missionControl.taskLevelMap = {};
                 this.missionControl.expandedTaskId = null;
                 this.missionControl.taskDeliverableCache = {};
+                this.missionControl.projectOutputFiles = [];
+                this.missionControl.projectOutputLoading = false;
 
                 try {
                     const res = await fetch(`/api/deep-work/projects/${project.id}/plan`);
@@ -151,6 +158,9 @@ window.PocketPaw.DeepWork = {
                         if (idx >= 0) {
                             this.missionControl.projects[idx] = data.project;
                         }
+
+                        // Load output files for the project
+                        this.loadProjectOutputFiles();
                     }
                 } catch (e) {
                     console.error('Failed to load project detail:', e);
@@ -273,6 +283,54 @@ window.PocketPaw.DeepWork = {
                 } catch (e) {
                     console.error('Failed to delete project:', e);
                     this.showToast('Failed to delete project', 'error');
+                }
+            },
+
+            // ==================== Output Files ====================
+
+            /**
+             * Load output files for the selected project via WebSocket browse command.
+             * Uses 'output_' context prefix so file-browser.js routes the response here.
+             */
+            loadProjectOutputFiles() {
+                const project = this.missionControl.selectedProject;
+                if (!project || !project.folder_path) return;
+                this.missionControl.projectOutputFiles = [];
+                this.missionControl.projectOutputLoading = true;
+                socket.send('browse', { path: project.folder_path, context: 'output_' + project.id });
+            },
+
+            /**
+             * Handle browse response routed via EventBus for output_ context.
+             */
+            handleOutputFiles(data) {
+                this.missionControl.projectOutputFiles = data.files || [];
+                this.missionControl.projectOutputLoading = false;
+                this.$nextTick(() => { if (window.refreshIcons) window.refreshIcons(); });
+            },
+
+            /**
+             * Open an output file or directory. Directories open in the file browser modal.
+             */
+            openOutputFile(file) {
+                const project = this.missionControl.selectedProject;
+                if (!project || !project.folder_path) return;
+                const fullPath = project.folder_path + '/' + file.name;
+                if (file.isDir) {
+                    this.fileLoading = true;
+                    this.fileError = null;
+                    this.files = [];
+                    this.filePath = fullPath;
+                    socket.send('browse', { path: fullPath });
+                    this.showFileBrowser = true;
+                } else {
+                    // Open file browser at parent dir so user can see the file in context
+                    this.fileLoading = true;
+                    this.fileError = null;
+                    this.files = [];
+                    this.filePath = project.folder_path;
+                    socket.send('browse', { path: project.folder_path });
+                    this.showFileBrowser = true;
                 }
             },
 

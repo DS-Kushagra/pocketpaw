@@ -2,6 +2,10 @@
  * PocketPaw Main Application
  * Alpine.js component for the dashboard
  *
+ * Changes (2026-02-17):
+ * - Health reconnect hook: re-fetch health data on WS reconnect
+ * - Added health_update socket handler and get_health on connect
+ *
  * Changes (2026-02-12):
  * - Call initHashRouter() in init() for hash-based URL routing
  *
@@ -22,6 +26,11 @@ function app() {
 
     return {
         // ==================== Core State ====================
+
+        // Version & updates
+        appVersion: '',
+        latestVersion: '',
+        updateAvailable: false,
 
         // View state
         view: 'chat',
@@ -254,6 +263,7 @@ function app() {
         _startApp() {
             // Wire EventBus listeners (cross-module communication)
             PocketPaw.EventBus.on('sidebar:files', (data) => this.handleSidebarFiles(data));
+            PocketPaw.EventBus.on('output:files', (data) => this.handleOutputFiles(data));
 
             // Register event handlers first
             this.setupSocketHandlers();
@@ -287,6 +297,9 @@ function app() {
                 }
             });
 
+            // Check for version updates
+            this.checkForUpdates();
+
             // Initialize hash-based URL routing
             this.initHashRouter();
 
@@ -294,6 +307,20 @@ function app() {
             this.$nextTick(() => {
                 if (window.refreshIcons) window.refreshIcons();
             });
+        },
+
+        /**
+         * Check PyPI for newer version via /api/version endpoint.
+         */
+        async checkForUpdates() {
+            try {
+                const resp = await fetch('/api/version');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                this.appVersion = data.current || '';
+                this.latestVersion = data.latest || '';
+                this.updateAvailable = !!data.update_available;
+            } catch (e) { /* silent */ }
         },
 
         /**
@@ -313,6 +340,10 @@ function app() {
                 socket.send('get_reminders');
                 socket.send('get_intentions');
                 socket.send('get_skills');
+                socket.send('get_health');
+
+                // Re-fetch full health data if modal is open (handles server restart)
+                if (this.onHealthReconnect) this.onHealthReconnect();
 
                 // Resume last session if WS connect didn't handle it via query param
                 const lastSession = StateManager.load('lastSession');
@@ -373,6 +404,9 @@ function app() {
             // Transparency handlers
             socket.on('connection_info', (data) => this.handleConnectionInfo(data));
             socket.on('system_event', (data) => this.handleSystemEvent(data));
+
+            // Health
+            socket.on('health_update', (data) => this.handleHealthUpdate(data));
 
             // Session handlers
             socket.on('session_history', (data) => this.handleSessionHistory(data));

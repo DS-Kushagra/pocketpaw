@@ -3,7 +3,7 @@
  *
  * Created: 2026-02-05
  * Updated: 2026-02-17 — Replace context-string routing with EventBus.
- * Previous: 2026-02-12 — handleFiles routes sidebar_* context to ProjectBrowser.
+ * Previous: 2026-02-16 — output_* context routing for Output Files panel.
  *
  * Contains file browser modal functionality:
  * - Directory navigation
@@ -40,6 +40,11 @@ window.PocketPaw.FileBrowser = {
                 // Route sidebar file tree responses via EventBus
                 if (data.context && data.context.startsWith('sidebar_')) {
                     PocketPaw.EventBus.emit('sidebar:files', data);
+                    return;
+                }
+                // Route output file responses via EventBus
+                if (data.context && data.context.startsWith('output_')) {
+                    PocketPaw.EventBus.emit('output:files', data);
                     return;
                 }
 
