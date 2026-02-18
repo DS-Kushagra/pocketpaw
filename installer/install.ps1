@@ -26,26 +26,41 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ── Banner ──────────────────────────────────────────────────────────────
+#  Banner 
 Write-Host ""
-Write-Host "  ┌─────────────────────────────────────────┐" -ForegroundColor Magenta
-Write-Host "  │  🐾  PocketPaw Installer                │" -ForegroundColor Magenta
-Write-Host "  │  The AI agent that runs on your laptop   │" -ForegroundColor Magenta
-Write-Host "  └─────────────────────────────────────────┘" -ForegroundColor Magenta
+Write-Host "  " -ForegroundColor Magenta
+Write-Host "      PocketPaw Installer                " -ForegroundColor Magenta
+Write-Host "    The AI agent that runs on your laptop   " -ForegroundColor Magenta
+Write-Host "  " -ForegroundColor Magenta
 Write-Host ""
 
-# ── Helper Functions ────────────────────────────────────────────────────
+#  Helper Functions 
 function Write-Step($msg) { Write-Host "  $msg" }
-function Write-Ok($msg) { Write-Host "  ✓ $msg" -ForegroundColor Green }
+function Write-Ok($msg) { Write-Host "   $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  Warn: $msg" -ForegroundColor Yellow }
 function Write-Err($msg) { Write-Host "  Error: $msg" -ForegroundColor Red }
 
 function Test-PythonVersion {
     param([string]$Cmd)
     try {
-        $ver = & $Cmd -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+        # Check output for specific MAJOR.MINOR signature to filter out any stray output
+        # e.g. from sitecustomize.py or warnings.
+        $script = "import sys; print(f'__POCKETPAW_VER__{sys.version_info.major}.{sys.version_info.minor}__END__')"
+        $out = & $Cmd -c $script 2>$null
         if ($LASTEXITCODE -ne 0) { return $false }
-        $parts = $ver.Trim().Split(".")
+        
+        # Parse the output line by line for the signature
+        $verStr = $null
+        foreach ($line in ($out -split "`r`n|`n")) {
+            if ($line -match '__POCKETPAW_VER__(\d+\.\d+)__END__') {
+                $verStr = $matches[1]
+                break
+            }
+        }
+        
+        if (-not $verStr) { return $false }
+        
+        $parts = $verStr.Split(".")
         $major = [int]$parts[0]
         $minor = [int]$parts[1]
         return ($major -ge 3 -and $minor -ge 11)
@@ -64,7 +79,7 @@ function Get-PythonFullVersion {
     }
 }
 
-# ── Find Python 3.11+ ──────────────────────────────────────────────────
+#  Find Python 3.11+ 
 $Python = $null
 
 # Try common commands
@@ -101,9 +116,13 @@ if (-not $Python) {
     } else {
         Write-Step "Installing uv (fast Python package manager)..."
         try {
-            Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression 2>$null
+            $uvScript = Join-Path $env:TEMP "uv-install.ps1"
+            Invoke-RestMethod "https://astral.sh/uv/install.ps1" -OutFile $uvScript
+            & $uvScript 2>$null
+            Remove-Item $uvScript -ErrorAction SilentlyContinue
+            
             # Refresh PATH
-            $env:PATH = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
+            $env:PATH = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\.uv\bin;$env:PATH"
             if (Get-Command uv -ErrorAction SilentlyContinue) {
                 $uvAvailable = $true
                 Write-Ok "uv installed"
@@ -160,15 +179,18 @@ $pyVer = Get-PythonFullVersion $Python
 $pyPath = if ($Python -eq "py -3") { (Get-Command py).Source } else { (Get-Command $Python -ErrorAction SilentlyContinue).Source }
 Write-Step "Python:  $pyVer ($pyPath)"
 
-# ── Ensure uv is available ──────────────────────────────────────────────
+#  Ensure uv is available 
 $uvAvailable = $false
 if (Get-Command uv -ErrorAction SilentlyContinue) {
     $uvAvailable = $true
 } else {
     Write-Step "Installing uv (fast Python package manager)..."
     try {
-        Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression 2>$null
-        $env:PATH = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:PATH"
+        $uvScript = Join-Path $env:TEMP "uv-install.ps1"
+        Invoke-RestMethod "https://astral.sh/uv/install.ps1" -OutFile $uvScript
+        & $uvScript 2>$null
+        Remove-Item $uvScript -ErrorAction SilentlyContinue
+        $env:PATH = "$env:USERPROFILE\.local\bin;$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\.uv\bin;$env:PATH"
         if (Get-Command uv -ErrorAction SilentlyContinue) {
             $uvAvailable = $true
             Write-Ok "uv installed"
@@ -201,8 +223,8 @@ if ($uvAvailable) {
 
 Write-Host ""
 
-# ── Download installer.py ──────────────────────────────────────────────
-$InstallerUrl = "https://raw.githubusercontent.com/pocketpaw/pocketpaw/main/installer/installer.py"
+#  Download installer.py 
+$InstallerUrl = if ($env:POCKETPAW_INSTALLER_URL) { $env:POCKETPAW_INSTALLER_URL } else { "https://raw.githubusercontent.com/pocketpaw/pocketpaw/main/installer/installer.py" }
 $FallbackUrl = "https://raw.githubusercontent.com/pocketpaw/pocketpaw/dev/installer/installer.py"
 $TempInstaller = Join-Path $env:TEMP "pocketpaw_installer.py"
 
@@ -245,7 +267,7 @@ if ($firstLine -notmatch '^(#|"""|import |from |def |class )') {
 Write-Step "Launching interactive installer..."
 Write-Host ""
 
-# ── Run installer ──────────────────────────────────────────────────────
+#  Run installer 
 $extraFlags = @()
 if ($uvAvailable) { $extraFlags += "--uv-available" }
 if ($NonInteractive) { $extraFlags += "--non-interactive" }
